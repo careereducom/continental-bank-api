@@ -2,3 +2,7 @@ node_modules/
 .env
 *.log
 .DS_Store
+logs/
+check_db.js
+cleanup_test.js
+create_admin_client.js
