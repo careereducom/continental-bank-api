@@ -1,0 +1,250 @@
+generator client {
+  provider      = "prisma-client-js"
+  engineType    = "client"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+datasource db {
+  provider          = "postgresql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  username      String    @unique
+  passwordHash  String
+  fullName      String
+  email         String    @unique
+  phone         String?
+  isAdmin       Boolean   @default(false)
+  pinAttempts       Int       @default(0)
+  pinLockedUntil    DateTime?
+  kycStatus     String    @default("PENDING")
+  loginOtp        String?
+  loginOtpExpiry  DateTime?
+  addressLine1  String?
+  addressLine2  String?
+  city          String?
+  state         String?
+  postalCode    String?
+  country       String?   @default("United States")
+  dateOfBirth   DateTime?
+  ssnLast4      String?
+  createdAt     DateTime  @default(now())
+
+  accounts      Account[]
+  transactions  Transaction[]
+  cards         Card[]
+  billPayments  BillPayment[]
+  deposits      Deposit[]
+  auditLogs     AuditLog[]
+  notifications Notification[]
+  payrollWorkers   Worker[]         @relation("PayrollOwner")
+  payrollPayments  PayrollPayment[] @relation("PayrollPaymentsMade")
+  pendingActions   PendingAction[]
+
+  // KYC approval flow
+  approvalStatus   String    @default("ACTIVE")
+  accessCode       String?
+  accessCodeExpiry DateTime?
+  approvedAt       DateTime?
+  approvedBy       String?
+  rejectedReason   String?
+  signupIp         String?
+  signupLocation   String?
+  signupUserAgent  String?
+}
+
+model Account {
+  id             String    @id @default(uuid())
+  accountNumber  String    @unique
+  accountName    String
+  balance        Decimal   @default(0) @db.Decimal(15, 2)
+  pendingOut    Decimal  @default(0) @db.Decimal(15, 2)
+  accountType    String    @default("checking")
+  isBusiness     Boolean   @default(false)
+  isRegistered   Boolean   @default(true)
+  transferCode   String
+  transferCodeHash  String?
+  openedAt       DateTime  @default(now())
+  userId         String
+  user           User      @relation(fields: [userId], references: [id])
+  createdAt      DateTime  @default(now())
+
+  sentTxns       Transaction[] @relation("Sender")
+  receivedTxns   Transaction[] @relation("Receiver")
+  cards          Card[]
+}
+
+model Transaction {
+  id              String    @id @default(uuid())
+  reference       String    @unique
+  amount          Decimal   @db.Decimal(15, 2)
+  status          String
+  type            String    @default("TRANSFER")
+  category        String?
+  description     String?
+  balanceAfter    Decimal?  @db.Decimal(15, 2)
+  note            String?
+  fromAccountId   String?
+  toAccountId     String?
+  fromAccount     Account?  @relation("Sender",   fields: [fromAccountId], references: [id])
+  toAccount       Account?  @relation("Receiver", fields: [toAccountId],   references: [id])
+  initiatedBy     String?
+  user            User?     @relation(fields: [initiatedBy], references: [id])
+  createdAt       DateTime  @default(now())
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  settledAt         DateTime?
+  isPending         Boolean  @default(false)
+  notifiedSender    Boolean  @default(false)
+  notifiedReceiver  Boolean  @default(false)
+}
+
+model Card {
+  id                String    @id @default(uuid())
+  cardNumber        String    @unique
+  last4             String    @default("")
+  brand             String    @default("VISA")
+  type              String
+  status            String    @default("ACTIVE")
+  expiryMonth       Int
+  expiryYear        Int
+  cvv               String
+  holderName        String
+  accountId         String
+  userId            String
+  account           Account   @relation(fields: [accountId], references: [id])
+  user              User      @relation(fields: [userId],    references: [id])
+  shippingLine1     String?
+  shippingLine2     String?
+  shippingCity      String?
+  shippingState     String?
+  shippingZip       String?
+  shippingCountry   String?
+  trackingNumber    String?
+  carrier           String?
+  orderedAt         DateTime  @default(now())
+  shippedAt         DateTime?
+  deliveredAt       DateTime?
+  estimatedDelivery DateTime?
+  createdAt         DateTime  @default(now())
+}
+
+model BillPayment {
+  id          String    @id @default(uuid())
+  reference   String    @unique
+  biller      String
+  customerId  String
+  amount      Decimal   @db.Decimal(15, 2)
+  status      String    @default("SUCCESS")
+  accountId   String
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  createdAt   DateTime  @default(now())
+}
+
+model Deposit {
+  id            String    @id @default(uuid())
+  reference     String    @unique
+  amount        Decimal   @db.Decimal(15, 2)
+  checkImage    String
+  status        String    @default("PENDING")
+  accountId     String
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  createdAt     DateTime  @default(now())
+  resolvedAt    DateTime?
+}
+
+model AuditLog {
+  id         String    @id @default(uuid())
+  action     String
+  userId     String?
+  ip         String?
+  ua         String?
+  path       String
+  success    Boolean
+  detail     String?
+  createdAt  DateTime  @default(now())
+  user       User?     @relation(fields: [userId], references: [id])
+}
+model Notification {
+  id          String    @id @default(uuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id])
+  type        String    // TRANSFER_OUT | TRANSFER_IN | SETTLED | FAILED | LOGIN
+  title       String
+  body        String
+  reference   String?
+  amount      Decimal?  @db.Decimal(15, 2)
+  status      String    @default("UNREAD")  // UNREAD | READ
+  createdAt   DateTime  @default(now())
+}
+model Worker {
+  id              String    @id @default(uuid())
+  payrollUserId   String
+  payrollUser     User      @relation("PayrollOwner", fields: [payrollUserId], references: [id])
+
+  fullName        String
+  role            String                    // Teacher, Cook, Cleaner, Nurse, Admin, Driver
+  category        String    @default("STAFF") // STAFF | CONTRACTOR | VOLUNTEER | TASK
+  department      String?                    // Education, Kitchen, Medical, Facilities
+  email           String?
+  phone           String?
+  photoUrl        String?
+  accountNumber       String?                // CFB account (if internal)
+  bankName            String?                // Chase, Wells Fargo, USAA, etc.
+  bankRoutingNumber   String?                // routing for external bank
+  bankAccountNumber   String?                // external bank account
+  monthlySalary   Decimal?  @db.Decimal(15, 2)
+  hireDate        DateTime  @default(now())
+  isActive        Boolean   @default(true)
+  notes           String?
+
+  createdAt       DateTime  @default(now())
+  payments        PayrollPayment[]
+}
+
+model PayrollPayment {
+  id              String    @id @default(uuid())
+  reference       String    @unique
+  workerId        String
+  worker          Worker    @relation(fields: [workerId], references: [id])
+
+  payrollUserId   String
+  payrollUser     User      @relation("PayrollPaymentsMade", fields: [payrollUserId], references: [id])
+
+  amount          Decimal   @db.Decimal(15, 2)
+  category        String    // SALARY | TASK | BONUS | EMERGENCY | MEDICAL | EDUCATION | OTHER
+  description     String?
+  status          String    @default("SUCCESS") // SUCCESS | PENDING | FAILED
+
+  fromAccountId   String
+  transactionId   String?   // link to Transaction table if money moved
+  paidAt          DateTime  @default(now())
+  paidBy          String    // username of officer who approved
+}
+model PendingAction {
+  id          String   @id @default(uuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  type        String   // TRANSFER | PAYROLL_SINGLE | PAYROLL_BATCH
+  payload     String   // JSON string of the action data
+  otp         String
+  otpExpiry   DateTime
+  attempts    Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+model BankRegistry {
+  id             String   @id @default(uuid())
+  accountNumber  String   @unique
+  routingNumber  String
+  accountName    String
+  bankName       String
+  accountType    String   @default("checking")
+  createdAt      DateTime @default(now())
+
+  @@index([accountNumber])
+  @@index([routingNumber])
+}
