@@ -271,13 +271,19 @@ router.post('/applications/:id/approve', auth, adminOnly, async (req, res) => {
       </div>
     `;
 
-    sendEmail({
-      to: user.email,
-      toName: user.fullName,
-      subject: 'Account Approved — Your Access Code',
-      html,
-    }).then(() => console.log(`[KYC] Approval email sent to ${user.email}`))
-      .catch(err => console.error('[KYC] Approval email failed:', err.message));
+    let emailSent = true;
+    try {
+      await sendEmail({
+        to: user.email,
+        toName: user.fullName,
+        subject: 'Account Approved — Your Access Code',
+        html,
+      });
+      console.log(`[KYC] Approval email sent to ${user.email}`);
+    } catch (err) {
+      emailSent = false;
+      console.error('[KYC] Approval email failed:', err.message);
+    }
 
     await prisma.auditLog.create({
       data: {
@@ -293,8 +299,11 @@ router.post('/applications/:id/approve', auth, adminOnly, async (req, res) => {
       success: true,
       accessCode,
       email: user.email,
+      emailSent,
       expiresAt: expiry,
-      message: 'Application approved. Access code emailed to applicant.',
+      message: emailSent
+        ? 'Application approved. Access code emailed to applicant.'
+        : 'Application approved, but the access-code email failed to send. Share the code manually.',
     });
   } catch (err) {
     console.error(err);

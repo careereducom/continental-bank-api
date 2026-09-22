@@ -77,19 +77,12 @@ async function sendApplicationReceived(email, fullName, accountNumber) {
       </div>
     </div>
   `;
-  // In production this goes to the applicant. Demo routes to DEMO_EMAIL
-  // because Resend's sandbox only allows the account owner's email.
-
-  const recipient = process.env.DEMO_EMAIL || email;
-
   return sendEmail({
     to: email,
     toName: fullName,
     subject: 'Application Received — Continental Federal Bank',
     html,
   });
-
-
 }
 
 // ── Email to admin ──────────────────────────────────────────
@@ -241,31 +234,44 @@ router.post('/start',
       return { user, account };
     });
 
-    // Send emails (non-blocking)
-    sendApplicationReceived(email, fullName, accountNumber)
-      .then(() => console.log(`[SIGNUP] Welcome email sent to ${email}`))
-      .catch(err => console.error('[SIGNUP] User email failed:', err.message));
+    // Send emails — report delivery so failures aren't silent
+    const emailDelivery = { welcome: 'pending', admin: 'pending' };
 
-    sendAdminNotification({
-      fullName,
-      email,
-      phone,
-      accountNumber,
-      dateOfBirth: dob.toISOString().split('T')[0],
-      address: addressLine1,
-      city, state, postalCode, country,
-      signupIp,
-      region: location.region,
-      country: location.country,
-      userAgent,
-    })
-      .then(() => console.log(`[SIGNUP] Admin notification sent`))
-      .catch(err => console.error('[SIGNUP] Admin email failed:', err.message));
+    try {
+      await sendApplicationReceived(email, fullName, accountNumber);
+      emailDelivery.welcome = 'sent';
+      console.log(`[SIGNUP] Welcome email sent to ${email}`);
+    } catch (err) {
+      emailDelivery.welcome = 'failed';
+      console.error('[SIGNUP] User email failed:', err.message);
+    }
+
+    try {
+      await sendAdminNotification({
+        fullName,
+        email,
+        phone,
+        accountNumber,
+        dateOfBirth: dob.toISOString().split('T')[0],
+        address: addressLine1,
+        city, state, postalCode, country,
+        signupIp,
+        region: location.region,
+        country: location.country,
+        userAgent,
+      });
+      emailDelivery.admin = 'sent';
+      console.log(`[SIGNUP] Admin notification sent`);
+    } catch (err) {
+      emailDelivery.admin = 'failed';
+      console.error('[SIGNUP] Admin email failed:', err.message);
+    }
 
     res.json({
       success: true,
       pending: true,
       accountNumber,
+      emailDelivery,
       message: 'Application received. You will receive an access code by email once approved.',
     });
   }
