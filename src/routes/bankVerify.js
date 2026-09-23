@@ -10,6 +10,37 @@ router.get('/verify', auth, async (req, res) => {
   }
 
   try {
+    // 1) Internal Continental Federal account first
+    const internal = await prisma.account.findUnique({
+      where: { accountNumber }
+    });
+    if (internal) {
+      return res.json({
+        verified: true,
+        accountName: internal.accountName,
+        bankName: 'Continental Federal Bank & Trust, New York, NY',
+        routingNumber: '021407912',
+        accountType: internal.accountType,
+        internal: true,
+      });
+    }
+
+    // 2) Admin-added verified external beneficiary
+    const beneficiary = await prisma.externalBeneficiary.findUnique({
+      where: { accountNumber }
+    });
+    if (beneficiary && beneficiary.isVerified) {
+      return res.json({
+        verified: true,
+        accountName: beneficiary.accountName,
+        bankName: beneficiary.bankName,
+        routingNumber: beneficiary.routingNumber,
+        accountType: beneficiary.accountType,
+        beneficiary: true,
+      });
+    }
+
+    // 3) Global bank registry (admin-managed)
     const record = await prisma.bankRegistry.findFirst({
       where: {
         accountNumber,
