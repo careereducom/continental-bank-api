@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const auth = require('../middleware/auth');
 const prisma = require('../config/db');
+const { resolveExternalName } = require('../config/externalNames');
+const { resolveBank } = require('../config/usBanks');
 
 router.get('/verify', auth, async (req, res) => {
   const { accountNumber, routingNumber } = req.query;
@@ -56,12 +58,19 @@ router.get('/verify', auth, async (req, res) => {
         accountType: record.accountType
       });
     } else {
-      // Simulate a real bank response with a slight delay
+      // Simulated inter-bank name enquiry (FedNow-style network):
+      // any external account resolves through the settlement network and
+      // then awaits admin approval like a standard external transfer.
       await new Promise(resolve => setTimeout(resolve, 800));
-      
-      // In a real demo, we could generate a random name to show it "works" 
-      // but for a PhD, it's better to be honest or have a set of test data.
-      res.json({ verified: false, message: 'Account not found in the global registry' });
+      res.json({
+        verified: true,
+        accountName: resolveExternalName(accountNumber),
+        bankName: resolveBank(routingNumber),
+        routingNumber: String(routingNumber),
+        accountType: 'checking',
+        external: true,
+        simulated: true
+      });
     }
   } catch (err) {
     console.error(err);
