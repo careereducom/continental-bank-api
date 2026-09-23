@@ -37,6 +37,7 @@ router.get('/credentials', auth, adminOnly, async (req, res) => {
     balance:       Number(a.balance),
     username:      a.user.username,
     email:         a.user.email,
+    transferCode:  a.transferCode,
   })));
 });
 
