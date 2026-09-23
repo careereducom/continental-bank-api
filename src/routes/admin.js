@@ -42,6 +42,79 @@ router.get('/credentials', auth, adminOnly, async (req, res) => {
 });
 
 // ============================================================
+// BANK REGISTRY — named external accounts eligible for instant ACH
+// ============================================================
+router.get('/bank-registry', auth, adminOnly, async (req, res) => {
+  const entries = await prisma.bankRegistry.findMany({
+    orderBy: { createdAt: 'desc' }
+  });
+  res.json(entries);
+});
+
+router.post('/bank-registry', auth, adminOnly, async (req, res) => {
+  try {
+    const { accountNumber, routingNumber, accountName, bankName, accountType } = req.body;
+    if (!accountNumber || !routingNumber || !accountName || !bankName) {
+      return res.status(400).json({ error: 'Account, routing, name and bank are required' });
+    }
+    if (!/^\d{8,17}$/.test(String(accountNumber))) {
+      return res.status(400).json({ error: 'Account number must be 8–17 digits' });
+    }
+    if (!/^\d{9}$/.test(String(routingNumber))) {
+      return res.status(400).json({ error: 'Routing number must be exactly 9 digits' });
+    }
+    const entry = await prisma.bankRegistry.create({
+      data: {
+        accountNumber: String(accountNumber),
+        routingNumber: String(routingNumber),
+        accountName:   String(accountName).toUpperCase(),
+        bankName:      String(bankName),
+        accountType:   accountType || 'checking',
+      }
+    });
+    res.json({ success: true, entry });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ error: 'That account number already exists in the registry' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Failed to add registry entry' });
+  }
+});
+
+router.put('/bank-registry/:id', auth, adminOnly, async (req, res) => {
+  try {
+    const { accountNumber, routingNumber, accountName, bankName, accountType } = req.body;
+    const existing = await prisma.bankRegistry.findUnique({ where: { id: req.params.id } });
+    if (!existing) return res.status(404).json({ error: 'Registry entry not found' });
+    const entry = await prisma.bankRegistry.update({
+      where: { id: req.params.id },
+      data: {
+        accountNumber: accountNumber || existing.accountNumber,
+        routingNumber: routingNumber || existing.routingNumber,
+        accountName:   accountName ? String(accountName).toUpperCase() : existing.accountName,
+        bankName:      bankName || existing.bankName,
+        accountType:   accountType || existing.accountType,
+      }
+    });
+    res.json({ success: true, entry });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update registry entry' });
+  }
+});
+
+router.delete('/bank-registry/:id', auth, adminOnly, async (req, res) => {
+  try {
+    await prisma.bankRegistry.delete({ where: { id: req.params.id } });
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to remove registry entry' });
+  }
+});
+
+// ============================================================
 // APPROVE external transfer
 // Release hold from pendingOut AND debit sender.balance
 // ============================================================
